@@ -1,0 +1,150 @@
+name: opensc
+adopt-info: opensc
+summary: Demo of OpenSC to p11-kit socket
+description: |
+  This snap provides pkcs11 interface for CCID smart cards through
+  p11-kit server.
+
+  The socket is also exported in slot p11-kit-service so that it
+  can be used by other snap
+
+base: core22
+grade: devel
+confinement: strict
+
+slots:
+  pcsc-service:
+    interface: content
+    content: pcsc-socket
+    write:
+    - $SNAP_DATA/pcscd
+
+  p11-kit-service:
+    interface: content
+    content: p11-kit-socket
+    write:
+    - $SNAP_DATA/p11-kit
+
+plugs:
+  pcsc:
+    interface: content
+    content: pcsc-socket
+    target: $SNAP_DATA/pcscd
+
+layout:
+  /var/lib/pcscd:
+    bind: $SNAP_DATA/pcscd
+  /usr/lib/pkcs11:
+    bind: $SNAP/usr/lib/pkcs11
+  /usr/lib/opensc-pkcs11.so:
+    bind-file: $SNAP/usr/lib/opensc-pkcs11.so
+  /usr/share/p11-kit:
+    bind: $SNAP/usr/share/p11-kit
+  /usr/lib/pcsc/drivers:
+    bind: $SNAP/usr/lib/pcsc/drivers
+  /usr/libexec/p11-kit:
+    bind: $SNAP/usr/libexec/p11-kit
+
+apps:
+  pcscd:
+    command: usr/sbin/pcscd -f
+    daemon: simple
+    slots:
+    - pcsc-service
+    plugs:
+    - raw-usb
+    - hardware-observe
+    - network-bind
+
+  p11-kit-server:
+    command: bin/start-p11-kit-server
+    daemon: simple
+    slots:
+    - p11-kit-service
+    sockets:
+      pkcs11:
+        listen-stream: $SNAP_DATA/p11-kit/pkcs11
+        socket-mode: 0666
+    after:
+    - pcscd
+    plugs:
+    - pcsc
+    - network-bind
+
+parts:
+  static:
+    plugin: dump
+    source: static
+
+  p11-kit:
+    source-type: git
+    source: https://github.com/p11-glue/p11-kit.git
+    source-commit: dd0590d4e583f107e3e9fafe9ed754149da335d0
+    #source-tag: 0.24.1
+    plugin: meson
+    build-packages:
+    - libsystemd-dev
+    stage-packages:
+    - libsystemd0
+    meson-parameters:
+    - --prefix=/usr
+    - --libdir=/usr/lib
+    - -Dtrust_module=disabled
+    - -Dsystemd=enabled
+
+  pcsc-lite:
+    build-packages:
+    - pkg-config
+    - autoconf-archive
+    - libudev-dev
+    - flex
+    stage-packages:
+    - libudev1
+    source-type: git
+    source: https://github.com/LudovicRousseau/PCSC.git
+    source-commit: d92b5d4fad5dea95ce8d12fac07fe1eec2150ad1
+    #source-tag: pcsc-1.9.5
+    plugin: autotools
+    autotools-configure-parameters:
+    - --prefix=/usr
+    - --libdir=/usr/lib
+    - --disable-libsystemd
+    - --enable-libudev
+    - --disable-libusb
+    - --disable-polkit
+    - --enable-ipcdir=/var/lib/pcscd
+
+  ccid:
+    after:
+    - pcsc-lite
+    build-packages:
+    - pkg-config
+    - libusb-1.0-0-dev
+    stage-packages:
+    - libusb-1.0-0
+    - gnutls-bin
+    source-type: git
+    source: https://github.com/LudovicRousseau/CCID.git
+    source-commit: f79106c365ed0747109e7e465adb54bf176b1036
+    #source-tag: ccid-1.5.0
+    plugin: autotools
+    autotools-configure-parameters:
+    - --prefix=/usr
+    - --libdir=/usr/lib
+
+  opensc:
+    after:
+    - pcsc-lite
+    build-packages:
+    - pkg-config
+    source-type: git
+    source: https://github.com/OpenSC/OpenSC.git
+    source-commit: c902e1992195e00ada12d71beb1029287cd72037
+    #source-tag: 0.22.0
+    plugin: autotools
+    autotools-configure-parameters:
+    - --prefix=/usr
+    - --libdir=/usr/lib
+    override-pull: |
+      snapcraftctl pull
+      snapcraftctl set-version "$(git describe --tags)"

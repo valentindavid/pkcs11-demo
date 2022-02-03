@@ -1,0 +1,13 @@
+#!/bin/bash
+
+set -e
+key="$(snapctl get key)"
+name="$(snapctl get name)"
+
+snapctl get cert >"${SNAP_DATA}/conf/certificate.crt"
+
+cat <<EOF >"${SNAP_DATA}/conf/snap.conf"
+server_name "${name}";
+ssl_certificate_key "engine:pkcs11:${key}";
+ssl_certificate "/var/conf/certificate.crt";
+EOF

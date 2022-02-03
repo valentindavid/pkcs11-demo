@@ -1,0 +1,11 @@
+#!/bin/bash
+
+set -e
+
+openssl req -x509 -nodes -newkey rsa:2048 -keyout /var/conf/snakeoil.key -out /var/conf/snakeoil.crt -sha256 -days 365  -subj "/CN=example.com"
+
+cat <<EOF >"${SNAP_DATA}/conf/snap.conf"
+server_name "example.com";
+ssl_certificate_key "/var/conf/snakeoil.key";
+ssl_certificate "/var/conf/snakeoil.crt";
+EOF

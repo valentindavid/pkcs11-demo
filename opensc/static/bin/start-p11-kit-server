@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -eu
+
+exec "${SNAP}/usr/bin/p11-kit" server -f --name "${SNAP_DATA}/p11-kit/pkcs11" pkcs11: "$@"

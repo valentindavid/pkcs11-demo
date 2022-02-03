@@ -1,0 +1,120 @@
+name: nginx-pkcs
+version: 1.21.6
+summary: nginx with dependencies to import pkcs11
+description: |
+  This is nginx built with OpenSSL.  It is also contains p11-kit
+  client, proxy, and libp11 (engine for OpenSSL).
+
+  It expects p11-kit server socket provided through plug p11-kit-service.
+
+  It starts with a local snake oil key.
+  To configure a pkcs11 private key for the SSL configuration, you need
+  to set "name" for the "common name" of the certificate, "cert" for
+  the certificate chain, and "key" for the pkcs11 key.
+
+  For example:
+
+  snap set nginx-pkcs name=example.com key=pkcs11:token=example.com cert="$(chain.pem)"
+
+  Then restart the snap.
+
+base: core22
+grade: devel
+confinement: strict
+
+plugs:
+  p11-kit-service:
+    interface: content
+    content: p11-kit-socket
+    target: $SNAP_DATA/p11-kit
+
+layout:
+  # Where openssl from core22 will look for engines
+  /usr/lib/$SNAPCRAFT_ARCH_TRIPLET/engines-3/pkcs11.so:
+    bind-file: $SNAP/usr/lib/$SNAPCRAFT_ARCH_TRIPLET/engines-3/pkcs11.so
+  # Where p11-kit provided here will look for module configuration
+  /usr/share/p11-kit:
+    bind: $SNAP/usr/share/p11-kit
+  # Where p11-kit will look for modules
+  /usr/lib/pkcs11:
+    bind: $SNAP/usr/lib/pkcs11
+  # This is the module the pkcs11 engine will load as module
+  /usr/lib/p11-kit-proxy.so:
+    symlink: $SNAP/usr/lib/p11-kit-proxy.so
+
+  # The rest is nginx related
+  /var/www:
+    bind: $SNAP/www
+  /etc/nginx:
+    bind: $SNAP/etc/nginx
+  /var/log:
+    bind: $SNAP_DATA/log
+  /var/conf:
+    bind: $SNAP_DATA/conf
+
+apps:
+  nginx:
+    command: usr/sbin/nginx
+    daemon: forking
+    environment:
+      P11_KIT_SERVER_ADDRESS: unix:path=$SNAP_DATA/p11-kit/pkcs11
+    plugs:
+    - p11-kit-service
+    - network-bind
+
+parts:
+  static:
+    plugin: dump
+    source: static
+
+  p11-kit:
+    source-type: git
+    source: https://github.com/p11-glue/p11-kit.git
+    source-commit: dd0590d4e583f107e3e9fafe9ed754149da335d0
+    #source-tag: 0.24.1
+    plugin: meson
+    meson-parameters:
+    - --prefix=/usr
+    - --libdir=/usr/lib
+    - -Dtrust_module=disabled
+    - -Dsystemd=disabled
+
+  libp11:
+    build-packages:
+    - pkg-config
+    - libssl-dev
+    - libpcre2-dev
+    after:
+    - p11-kit
+    source-type: git
+    source: https://github.com/OpenSC/libp11.git
+    source-commit: 9ca6a71c890b5583c8af3b4900172626bca55e72
+    #source-tag: libp11-0.4.11
+    plugin: autotools
+    autotools-configure-parameters:
+    - --prefix=/usr
+    - --libdir=/usr/lib
+
+  nginx:
+    source-type: tar
+    source: http://nginx.org/download/nginx-1.21.6.tar.gz
+    source-checksum: sha256/66dc7081488811e9f925719e34d1b4504c2801c81dee2920e5452a86b11405ae
+    plugin: autotools
+    autotools-configure-parameters:
+    - --prefix=/usr
+    - --conf-path=/etc/nginx/nginx.conf
+    - --http-log-path=/var/log/access.log
+    - --pid-path=/var/log/nginx.pid
+    - --lock-path=/var/log/nginx.lock
+    - --http-client-body-temp-path=/tmp/client_body_temp
+    - --http-proxy-temp-path=/tmp/proxy_temp
+    - --http-fastcgi-temp-path=/tmp/fastcgi_temp
+    - --http-uwsgi-temp-path=/tmp/uwsgi_temp
+    - --http-scgi-temp-path=/tmp/scgi_temp
+    - --user=root
+    - --group=root
+    - --error-log-path=/var/log/error.log
+    - --with-http_ssl_module
+    - --with-http_v2_module
+    stage:
+    - -etc/nginx/nginx.conf
